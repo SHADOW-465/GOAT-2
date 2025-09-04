@@ -1,0 +1,367 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  employee
+  executive
+}
+
+enum TaskStatus {
+  pending
+  in_progress
+  completed
+  overdue
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum LeadStatus {
+  new
+  contacted
+  qualified
+  rejected
+  converted
+}
+
+enum InvoiceStatus {
+  draft
+  sent
+  paid
+  overdue
+  cancelled
+}
+
+enum EditingStatus {
+  editing
+  draft_ready
+  in_review
+  approved
+}
+
+enum NotificationType {
+  urgent
+  approval
+  system
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  role        UserRole
+  designation String?
+  avatar      String?
+  phone       String?
+  department  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  assignedTasks     Task[]           @relation("TaskAssignee")
+  createdTasks      Task[]           @relation("TaskCreator")
+  assignedShoots    ShootAssignment[]
+  assignedLeads     Lead[]           @relation("LeadAssignee")
+  createdLeads      Lead[]           @relation("LeadCreator")
+  editingTasks      EditingTask[]
+  notifications     Notification[]
+  createdScripts    Script[]
+  createdComments   Comment[]
+  timeLogs          TimeLog[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  clientId    String
+  status      String   @default("active")
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tasks  Task[]
+
+  @@map("projects")
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus   @default(pending)
+  priority    TaskPriority @default(medium)
+  projectId   String?
+  assigneeId  String?
+  creatorId   String
+  dueDate     DateTime?
+  estimatedHours Float?
+  actualHours    Float?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assignee  User?      @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator   User       @relation("TaskCreator", fields: [creatorId], references: [id])
+  timeLogs  TimeLog[]
+
+  @@map("tasks")
+}
+
+model TimeLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  startTime DateTime
+  endTime   DateTime?
+  duration  Float?   // in hours
+  notes     String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("time_logs")
+}
+
+model Client {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  company     String?
+  address     String?
+  contactPerson String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  projects  Project[]
+  shoots    Shoot[]
+  invoices  Invoice[]
+  revenue   Revenue[]
+
+  @@map("clients")
+}
+
+model Shoot {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  clientId    String
+  location    String?
+  startDate   DateTime
+  endDate     DateTime
+  status      String    @default("scheduled")
+  budget      Float?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignments ShootAssignment[]
+  editingTasks EditingTask[]
+
+  @@map("shoots")
+}
+
+model ShootAssignment {
+  id      String @id @default(cuid())
+  shootId String
+  userId  String
+  role    String // e.g., "director", "camera", "editor"
+
+  // Relations
+  shoot Shoot @relation(fields: [shootId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shootId, userId])
+  @@map("shoot_assignments")
+}
+
+model Lead {
+  id          String     @id @default(cuid())
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  source      String?    // e.g., "website", "referral", "social"
+  status      LeadStatus @default(new)
+  value       Float?
+  notes       String?
+  assigneeId  String?
+  creatorId   String
+  convertedAt DateTime?
+  rejectedAt  DateTime?
+  reason      String?    // reason for rejection
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  assignee User @relation("LeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator  User @relation("LeadCreator", fields: [creatorId], references: [id])
+
+  @@map("leads")
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  clientId    String
+  invoiceNumber String      @unique
+  amount      Float
+  status      InvoiceStatus @default(draft)
+  dueDate     DateTime
+  paidDate    DateTime?
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model Revenue {
+  id          String   @id @default(cuid())
+  clientId    String
+  amount      Float
+  description String?
+  month       Int
+  year        Int
+  createdAt   DateTime @default(now())
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("revenue")
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  amount      Float
+  description String
+  category    String   // e.g., "equipment", "travel", "software"
+  month       Int
+  year        Int
+  createdAt   DateTime @default(now())
+
+  @@map("expenses")
+}
+
+model Script {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  projectId   String?
+  clientId    String?
+  creatorId   String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  creator  User            @relation(fields: [creatorId], references: [id])
+  versions ScriptVersion[]
+
+  @@map("scripts")
+}
+
+model ScriptVersion {
+  id        String   @id @default(cuid())
+  scriptId  String
+  version   Int
+  content   String
+  changes   String?  // description of changes
+  createdAt DateTime @default(now())
+
+  // Relations
+  script Script @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@unique([scriptId, version])
+  @@map("script_versions")
+}
+
+model EditingTask {
+  id          String         @id @default(cuid())
+  title       String
+  description String?
+  shootId     String?
+  assigneeId  String?
+  status      EditingStatus  @default(editing)
+  priority    TaskPriority   @default(medium)
+  dueDate     DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  shoot     Shoot?     @relation(fields: [shootId], references: [id], onDelete: SetNull)
+  assignee  User?      @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  comments  Comment[]
+
+  @@map("editing_tasks")
+}
+
+model Comment {
+  id            String   @id @default(cuid())
+  editingTaskId String
+  userId        String
+  content       String
+  timestamp     DateTime @default(now())
+
+  // Relations
+  editingTask EditingTask @relation(fields: [editingTaskId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@map("comments")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  actionUrl String?
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model FAQ {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String?
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("faq")
+}
